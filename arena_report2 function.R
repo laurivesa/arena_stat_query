@@ -462,7 +462,7 @@ do_analytics <- function( arena.entity, arena.dimensions, query1, query2)  {
     OUT_mean[  is.na(OUT_mean )] <- ""
     
     # convert negative lower confidence intervals to zeros
-    OUT_mean   <- OUT_mean   %>%
+    OUT_mean   <- OUT_mean   %>% 
       mutate( across( ends_with("_low"),  ~ if_else(.x < 0, 0, .x) ))
     OUT_total  <- OUT_total  %>%
       mutate( across( ends_with("_low"),  ~ if_else(.x < 0, 0, .x) ))
