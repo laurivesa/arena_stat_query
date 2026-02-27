@@ -48,15 +48,33 @@ select_Dimensions <- function(arena.entity, query1 ) {
   
   arena.dimensions       <- c( 'plot_forest_type', 'cluster_province', 'tree_health') #,	'tree_dbh_10cm')
 #  arena.dimensions       <- c('stratum_calc', 'tree_species')
-
+  arena.dimensions       <- c('stand_forest_type')
+  
   return( arena.dimensions)
 }
 
+select_DimensionList <- function(arena.entity ) {
+  # select here dimensions to report
+#  print(paste("Selected entity: ", arena.entity))
+  df_DimensionTable <- read.csv( "ReportDimensions.csv")
+  
+  dimension_list <- df_DimensionTable %>%
+    filter( entity == arena.entity) %>% 
+#    select(dimension, label_en)   
+    pull( dimension)
+
+  return( dimension_list )
+}
+
+
+
+
+
 #************************************************************
-# 1) unzip input file, 2) read Arena json file, 3) read SchemaSummary, 3) read list of entities
+# 1) unzip input file, 2) read Arena json file, 3) read SchemaSummary, 4) read list of entities
 get_Entities <- function( Zip_file) {
 
-  pathTemp = paste0(getwd(), "/Temp")
+#  pathTemp = paste0(getwd(), "/Temp")
   
   # 1- Unzip input file  -------------------------------------------------------
   # delete temporary folder for zip file data
@@ -65,6 +83,7 @@ get_Entities <- function( Zip_file) {
   unzip(Zip_file, exdir = "./Temp")
   setwd("./Temp")
 
+  
   # 2- Read json, schemaSummary  -------------------------------------------------------
   # read json
   arena.chainSummary   <- arena.chainSummary <- jsonlite::fromJSON( 'chain_summary.json' )
@@ -84,24 +103,28 @@ get_Entities <- function( Zip_file) {
             filter( type =='entity')                       %>%
             select( entity = name, label = all_of( label_column_name)),
             by = 'entity')
-  
-  return( list(arena.chainSummary, arena.SchemaSummary, df_ReportEntities ))
+  query1 <- list(arena.chainSummary, arena.SchemaSummary, df_ReportEntities )
+  names(query1) <- c('chainSummary', 'SchemaSummary', 'ReportEntities')
+  return(query1 )
 }
 
 #************************************************************
 # Read and return df_wideTable, wideTable_names
 get_WideTable <- function( arena.entity, query1) {
   
-  arena.chainSummary     <- query1[[1]]
-  arena.SchemaSummary    <- query1[[2]]
-  arena.ReportEntities   <- query1[[3]]
+  arena.chainSummary     <- query1[["chainSummary"]]
+  arena.SchemaSummary    <- query1[["SchemaSummary"]]
+  arena.ReportEntities   <- query1[["ReportEntities"]]
 
+#  print(arena.chainSummary)
   # chainSummary.json: label column can be named e.g. "label_en","label_fr", or simply "label" if there is just one language in the survey. 
   label_column_name <- paste0("label_", arena.chainSummary$selectedLanguage)
+  
   if (!label_column_name %in% names(arena.chainSummary$resultVariables)) label_column_name = 'label'
 
   # 1- Read Wide Table data ---------------------------------
   widetable_file <- arena.ReportEntities$wideTable[ arena.ReportEntities$entity == arena.entity ]
+#  print(arena.ReportEntities)
   df_wideTable   <- read.csv( widetable_file, stringsAsFactors = F  )
   
   # 2- Get all variables in the Arena chain -------------------------------------------------------
@@ -112,7 +135,7 @@ get_WideTable <- function( arena.entity, query1) {
            source      = 'chain' )
 #           label      = trimws( str_sub(label, end=-4)))
   
-  print( df_ReportVariables)
+#  print( df_ReportVariables)
   
   # 3- DF with info about Wide Table data (wideTable_names) ---------------------------------
   # essential information about Wide Table data 
@@ -145,8 +168,9 @@ get_WideTable <- function( arena.entity, query1) {
   
   # tag the stratum attribute
   wideTable_names$stratum <- FALSE
-  if (arena.chainSummary$stratumAttribute != '') wideTable_names$stratum[wideTable_names$name == arena.chainSummary$stratumAttribute] <- TRUE
-  
+  if (!is.null(arena.chainSummary$stratumAttribute)) {
+    if ( arena.chainSummary$stratumAttribute != '') wideTable_names$stratum[wideTable_names$name == arena.chainSummary$stratumAttribute] <- TRUE
+  }
 
   # 4- Add category type (Flat/Hierarchical) ---------------------------------
   # needed to get separate hierarchical code attributes)
@@ -162,7 +186,7 @@ get_WideTable <- function( arena.entity, query1) {
   }
 
   wideTable_names[ is.na(wideTable_names) ] <- ''
-  print( wideTable_names)
+#  print( wideTable_names)
   
   return( list(df_wideTable, wideTable_names ))
 }
@@ -176,7 +200,7 @@ get_WideTable <- function( arena.entity, query1) {
 #************************************************************
 # The main function
 #************************************************************
-do_analytics <- function( arena.entity, arena.dimensions, query1, query2)  {
+do_analytics <- function( arena.entity, arena.dimensions, arena.clevel, query1, query2)  {
   
   # read arguments
   arena.chainSummary    <- query1[[1]]
@@ -184,6 +208,7 @@ do_analytics <- function( arena.entity, arena.dimensions, query1, query2)  {
   #  df_ReportEntities     <- query1[[3]] # not needed in this function
   df_wideTable          <- query2[[1]]
   arena.wideTable_names <- query2[[2]]
+  arena.clevel          <- as.numeric( arena.clevel)
   
   # initialize 'arena.analyze'
   arena.analyze  <- list( entity = arena.entity,              # selected entity name to report, e.g. 'tree'
@@ -420,7 +445,7 @@ do_analytics <- function( arena.entity, arena.dimensions, query1, query2)  {
       collect()                                                                   %>%
       dplyr::group_by( across( arena.analyze$dimensions ))                        %>%     
       dplyr::summarize( across( any_of(arena.analyze$measures),
-                list( ~survey_mean( ., na.rm = FALSE, vartype = c("se","ci"), proportion = FALSE, level = arena.chainSummary$analysis$pValue, df = Inf )))) %>% 
+                list( ~survey_mean( ., na.rm = FALSE, vartype = c("se","ci"), proportion = FALSE, level = arena.clevel, df = Inf )))) %>% 
       rename_with(.fn = ~ str_replace(.x, "_1", "_1_"), .cols = ends_with("_1")) 
   
     if ( length(arena.analyze$dimensions_at_baseunit) == 0) {
@@ -551,44 +576,48 @@ do_analytics <- function( arena.entity, arena.dimensions, query1, query2)  {
     OUT_mean$item_count  <- NULL
     OUT_total$item_count <- NULL
   
+    dbDisconnect( conn = db)
+    
     # 25. Write results out -----
-    
+    strDimension <- paste( arena.dimensions, collapse = "--")
+    strDimension <- stringr::str_remove( strDimension, paste0(arena.entity,"_"))
+    fileMean     <- paste0( arena.entity, "_MEAN_(",  strDimension, ").csv" )
+    fileTotal    <- paste0( arena.entity, "_TOTAL_(", strDimension, ").csv" )
+
     print( paste("Survey name:", arena.chainSummary$surveyName))
-    write.csv( OUT_mean,  "OUT_mean.csv",  row.names = F)
-    write.csv( OUT_total, "OUT_total.csv", row.names = F)
+    write.csv( OUT_mean,  fileMean,  row.names = F)
+    write.csv( OUT_total, fileTotal, row.names = F)
     
-    dbDisconnect(conn = db)
-    
-    return("Processing ended")
+    return( list("Processing ended", c( fileMean, fileTotal)))
 }
 
 #***************************************************************************
 #***************************************************************************
 
-# MAIN PROGRAM --------------------
-# open zip file and unzip it
-Zip_file <- rstudioapi::selectFile(caption = "Select Zip file", 
-                                   path = getwd(),
-                                   filter = "ZIP Files (*.zip)",
-                                   existing = TRUE)
-
-if ( !is.null( Zip_file)) {
-
-  # returns: list( arena.chainSummary, arena.SchemaSummary, df_ReportEntities)
-  query1                 <- get_Entities( Zip_file)
-  
-  # returns the selected Entity name
-  arena.entity           <- select_Entity( query1[3])
-  
-  # returns a list of selected Dimensions
-  arena.dimensions       <- select_Dimensions( arena.entity, query1) 
-  
-  # Returns: list( df_wideTable, arena.wideTable_names) 
-  query2                 <- get_WideTable( arena.entity, query1)
-  
-  setwd("..")
-  process_message        <- do_analytics( arena.entity, arena.dimensions, query1, query2)
-  
-  print( process_message)
-
-}
+# # MAIN PROGRAM --------------------
+# # open zip file and unzip it
+# Zip_file <- rstudioapi::selectFile(caption = "Select Zip file", 
+#                                    path = getwd(),
+#                                    filter = "ZIP Files (*.zip)",
+#                                    existing = TRUE)
+# 
+# if ( !is.null( Zip_file)) {
+# 
+#   # returns: list( arena.chainSummary, arena.SchemaSummary, df_ReportEntities)
+#   query1                 <- get_Entities( Zip_file)
+#   
+#   # returns the selected Entity name
+#   arena.entity           <- select_Entity( query1[3])
+#   
+#   # returns a list of selected Dimensions
+#   arena.dimensions       <- select_Dimensions( arena.entity, query1) 
+#   
+#   # returns: list( df_wideTable, arena.wideTable_names) 
+#   query2                 <- get_WideTable( arena.entity, query1)
+#   
+#   setwd("..")
+#   process_message        <- do_analytics( arena.entity, arena.dimensions, query1, query2)
+#   
+#   print( process_message)
+# 
+# }
