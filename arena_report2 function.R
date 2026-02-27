@@ -26,7 +26,7 @@ options( digits                      = 10)
 
 
 # set the default folder 
-setwd("C:/Users/User/Documents/arena")
+# setwd("C:/Users/User/Documents/arena")
 
 #************************************************************
 #************************************************************
@@ -78,10 +78,10 @@ get_Entities <- function( Zip_file) {
   
   # 1- Unzip input file  -------------------------------------------------------
   # delete temporary folder for zip file data
-  unlink("./Temp", recursive=TRUE)
+#  unlink("./Temp", recursive=TRUE)
   
-  unzip(Zip_file, exdir = "./Temp")
-  setwd("./Temp")
+  unzip(Zip_file, exdir = ".") #     "./Temp")
+#  setwd("./Temp")
 
   
   # 2- Read json, schemaSummary  -------------------------------------------------------
